@@ -1,12 +1,14 @@
 ---
 title: "Raport - analiza rozmarów śledzi"
 author: "Martin Berent"
-date: "January 12, 2017"
-output: html_document
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    keep_md: true
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
 ```{r libraries, echo=FALSE}
@@ -14,4 +16,40 @@ library(knitr)
 library(dplyr)
 library(ggplot2)
 library(caret)
+```
+
+<br>
+
+### Dane
+Atrybuty:
+
+* **length:** długość złowionego śledzia [cm];
+* **cfin1:** dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 1];
+* **cfin2:** dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 2];
+* **chel1:** *dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 1];
+* **chel2:** dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 2];
+* **lcop1:** dostępność planktonu [zagęszczenie widłonogów gat. 1];
+* **lcop2:** dostępność planktonu [zagęszczenie widłonogów gat. 2];
+* **fbar:** natężenie połowów w regionie [ułamek pozostawionego narybku];
+* **recr:** roczny narybek [liczba śledzi];
+* **cumf:** łączne roczne natężenie połowów w regionie [ułamek pozostawionego narybku];
+* **totaln:** łączna liczba ryb złowionych w ramach połowu [liczba śledzi];
+* **sst:** temperatura przy powierzchni wody [°C];
+* **sal:** poziom zasolenia wody [Knudsen ppt];
+* **xmonth:** miesiąc połowu [numer miesiąca];
+* **nao:** oscylacja północnoatlantycka [mb].
+<br><br>
+
+```{r data_loading}
+data <- read.csv("sledzie.csv", header = TRUE, sep = ",", na.strings = "?", nrows=52581)
+data <- data[-1]
+knitr::kable(head(data))
+```
+
+<br>
+
+### Podstawowe statystyki
+
+```{r base_stats}
+knitr::kable(summary(data))
 ```
