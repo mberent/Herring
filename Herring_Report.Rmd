@@ -1,0 +1,17 @@
+---
+title: "Raport - analiza rozmarów śledzi"
+author: "Martin Berent"
+date: "January 12, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+```{r libraries, echo=FALSE}
+library(knitr)
+library(dplyr)
+library(ggplot2)
+library(caret)
+```
