@@ -1,7 +1,7 @@
 ---
 title: "Raport - analiza rozmarów śledzi"
 author: "Martin Berent"
-date: \`r format(Sys.Date(), "%d %B, %Y")`\
+date: 23.01.2016
 output: 
   html_document:
     toc: true
@@ -45,7 +45,7 @@ minMaxNormalization <- function(x) {
 <br>
 
 ### Dane
-#### Atrybuty:
+#### Atrybuty
 
 * **length:** długość złowionego śledzia [cm]
 * **cfin1:** dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 1]
@@ -64,7 +64,7 @@ minMaxNormalization <- function(x) {
 * **nao:** oscylacja północnoatlantycka [mb]
 <br><br>
 
-#### Pierwszych pięć obserwacji:
+#### Pierwszych pięć obserwacji
 
 ```{r data_loading, cache=TRUE}
 data <- read.csv("sledzie.csv", header = TRUE, sep = ",", na.strings = "?", nrows=52581)
@@ -201,7 +201,7 @@ statsNA(data$lcop2, bins = 10)
 statsNA(data$sst, bins = 10)
 ```
 
-#### Wypełniane 
+#### Wypełnianie wartości pustych 
 
 Dla wszystkich powyższych atrubutów wartości puste stanowią mniej niż 5% obserwacji. Ich rokład jest równomierny i ma charakter losowy. Sekwencje dwóch lub trzech wartości pustych są rzadkie. W związku z tym wartości puste będą imputowane z użyciem filtru Kalmana.   
 
@@ -285,22 +285,24 @@ ggplot(environment_melt, aes(fishing, normalized_value, color=environment_stat))
   theme_bw()
 ```
 
+```{r exploitation}
+exploitation <- data[, c('fbar', 'recr', 'cumf', 'totaln')]
+normed <- as.data.frame(lapply(exploitation, minMaxNormalization))
+normed["fishing"] <- data$fishing
+exploitation_melt <- melt(normed, id.vars = c('fishing'),  variable.name = "exploitation_stat", value.name = "normalized_value")
+
+ggplot(exploitation_melt, aes(fishing, normalized_value, color=exploitation_stat)) +
+  geom_smooth(se = FALSE) + 
+  geom_vline(xintercept = 16800, colour="darkgray", linetype = "longdash", size=1) + 
+  ggtitle('Zmiana w eksploatacji łowisk') +
+  theme_bw()
+```
+
 ### Regresja
+#### Regresja liniowa
 
-```{r data_splitting}
-inTrain <- createDataPartition(y=data$fishing, p=0.7, list=FALSE)
-training <- data[inTrain, -c(1)]
-testing <- data[-inTrain, -c(1)]
-
-
-xgb_grid_1 = expand.grid(
-  nrounds = 2, 
-  max_depth = c(5, 10, 15), 
-  eta = c(0.01, 0.001, 0.0001), 
-  gamma = c(1, 2, 3), 
-  colsample_bytree = c(0.4, 0.7, 1.0), 
-  min_child_weight = c(0.5, 1, 1.5)
-)
+```{r X, echo=FALSE}
+X <- data[, -c(1)]
 ```
 
 ``` {r linear_regression}
@@ -308,36 +310,44 @@ ctrl <- trainControl(
   method="cv",
   number = 5)
 
-model_lm <- train(length ~ ., data = training, method = "lm", trControl = ctrl)
+model_lm <- train(length ~ ., data = X, method = "lm", trControl = ctrl)
 
 print(model_lm)
+```
 
-predictions_lm <- predict(model_lm, testing)
+Ocena wanożności atrybutów:
 
-postResample(pred = predictions_lm, obs = testing$length)
-
+``` {r linear_regression_importance}
 plot(varImp(model_lm))
 ```
 
+#### XgbLinear
+
 ``` {r xgbLinear}
 xgb_grid_1 = expand.grid(
-  nrounds = 100, 
-  eta=c(0.1,0.01,0.001,0.0001),
-  alpha = 0,
-  lambda = 1
+  nrounds=c(20,50,100), 
+  eta=0.3,
+  alpha=c(1,0.7,0.3,0.1,0),
+  lambda=c(1,0.7,0.3,0.1,0)
 )
 
 ctrl <- trainControl(
   method="cv",
   number = 5)
 
-model_xgb <- train(length ~ ., data = training, trControl = ctrl, tuneGrid = xgb_grid_1, 
-                   method = "xgbLinear", max_depth = 8)
+model_xgb <- train(length ~ ., data = X, trControl = ctrl, 
+                   tuneGrid = xgb_grid_1, method = "xgbLinear", max_depth = 5)
 print(model_xgb)
+```
 
-predictions_xgb <- predict(model_xgb, testing)
+Dobór parametrów modelu:
 
-postResample(pred = predictions_xgb, obs = testing$length)
+``` {r xgbLinear_tuning}
+plot(model_xgb)
+```
 
+Ocena wanożności atrybutów:
+
+``` {r xgbLinear_importance}
 plot(varImp(model_xgb))
 ```
