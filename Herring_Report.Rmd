@@ -10,7 +10,7 @@ output:
     keep_md: true
 ---
 
-```{r setup, include=FALSE}
+```{r setup_knitr, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
@@ -25,6 +25,7 @@ library(reshape2)
 library(plotly)
 library(imputeTS)
 library(corrplot)
+library(doMC)
 ```
 
 ```{r panderOptions, echo=FALSE}
@@ -32,8 +33,9 @@ panderOptions('table.split.table', 180)
 panderOptions('table.style', 'rmarkdown')
 ```
 
-```{r seed, echo=FALSE}
+```{r setup, echo=FALSE}
 set.seed(42)
+registerDoMC(cores = 6)
 ```
 
 ```{r custom_finctions, echo=FALSE}
@@ -44,6 +46,14 @@ minMaxNormalization <- function(x) {
 
 <br>
 
+### Streszczenie
+
+Przedmiotem poniższej analizy jest określenie dlaczego długość śledzia oceanicznego wyławianego w Europie w pewnym momencie zaczeła spadać. W ramach analizy dysponowano ponad 52 tysiącami obserwacji dokonanych podczas połowów. Dla każdej obserwacji odnotowane zostały dane dotyczące dostępności planktonu, warunków środowiskowych oraz eksploatacji łowisk. Rozmiar śledzia określany był na podstawie próbki o rozmiarze od 50 do 100 trzy letnich śledzi.
+
+W ramach raportu przedstawiono podstawowe statystyki dla każdej cechy. Dokonano szczegółowej analizy rozkładu danych, co pomogło w określeniu i usunięciu wartości odstających. W następnym kroku przeprowadzono inspekcję wartości pustych. Zbadano ich udział, rozkład oraz strukturę. Na tej podstawie użyto filtru Kalmana do wypełnienia wartości pustych. Po wstępnym przetwarzaniu danych przeanalizowano korelację cech. Zauważono że wielkość sledzia jest wysoce skorelowana z temperaturą przy powierzchni wody. Dodatkowo zobrazowano zależność wpływu oscylacji północnoatlantyckiej na dostępność planktonu Calanus helgolandicus gat. 1 i Widłonogów gat. 1. Dysponując danymi uszeregowanymi chronologicznie w następnym kroku podjęto próbę zobrazowania zależności czasowych dla trzech grup cech: dostępności planktonu, warunków środowiskowych oraz ekploatacji łowisk. Przedstawiono również zmianę rozmiarów śledzia na przestrzeni kolejnych połowów.
+
+W ostatnim etapie zbudowano dwa modele regresji przewidujące rozmiar śledzia. Modele te zostały poddane ocenie R square oraz RMSE oraz porównane ze sobą. Dla każdego modelu określono ważność atrybutów. Wyniki te w dużym stopniu potwierdziły silną zalezność rozmiaru śledzia z temperatura przy powierzchni wody. 
+
 ### Dane
 #### Atrybuty
 
@@ -52,8 +62,8 @@ minMaxNormalization <- function(x) {
 * **cfin2:** dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 2]
 * **chel1:** *dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 1]
 * **chel2:** dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 2]
-* **lcop1:** dostępność planktonu [zagęszczenie widłonogów gat. 1]
-* **lcop2:** dostępność planktonu [zagęszczenie widłonogów gat. 2]
+* **lcop1:** dostępność planktonu [zagęszczenie Widłonogów gat. 1]
+* **lcop2:** dostępność planktonu [zagęszczenie Widłonogów gat. 2]
 * **fbar:** natężenie połowów w regionie [ułamek pozostawionego narybku]
 * **recr:** roczny narybek [liczba śledzi]
 * **cumf:** łączne roczne natężenie połowów w regionie [ułamek pozostawionego narybku]
@@ -80,7 +90,7 @@ pander(head(data))
 ```{r base_stats}
 sprintf("Liczba kolumn %d", ncol(data))
 sprintf("Liczba wierszy %d", nrow(data))
-sprintf("Liczba wierszy nie zawierających wartość pustą %d", nrow(na.omit(data)))
+sprintf("Liczba wierszy nie zawierających wartości pustej %d", nrow(na.omit(data)))
 pander(summary(data))
 ```
 
@@ -153,7 +163,7 @@ grid.arrange(p_cfin1, p_lcop1, nrow=1)
 
 ### Wartości puste
 
-Kolumny zawierające wartości puste
+Kolumny zawierające wartości puste wraz z analizą udziału, rozkładu oraz struktury. 
 
 ```{r}
 colnames(data)[apply(is.na(data), 2, any)]
@@ -224,6 +234,18 @@ M<-cor(data[, -c(1,15)])
 corrplot(M, method="circle")
 ```
 
+Silna zalezność rozmiaru śledzia i temperatury przy powierzchni wody przedstawiona z użyciem lini trendu. Można wnioskować że większa temperatura ma odzwierciedlenie w mniejszych rozmiarach złowionych śledzi.
+
+```{r sst_length}
+data_sample <- data
+ggplot(data_sample, aes(sst, length)) + 
+  geom_point() + 
+  geom_smooth(color="green", method="lm") + 
+  theme_bw()
+```
+
+Na podstawie korelacji można zauważyć również zalezność pomiędzy dostępnością **chel1** Calanus helgolandicus gat. 1 i **lcop1:** Widłonogów gat. 1 a **nao** oscylacją pólnocnoatlantydzką.
+
 ```{r nao_lcop1}
 data_sample <- data
 ggplot(data_sample, aes(nao, lcop1)) + 
@@ -240,17 +262,9 @@ ggplot(data_sample, aes(nao, chel1)) +
   theme_bw()
 ```
 
-```{r sst_length}
-data_sample <- data
-ggplot(data_sample, aes(sst, length)) + 
-  geom_point() + 
-  geom_smooth(color="green", method="lm") + 
-  theme_bw()
-```
-
 ### Zmienność cech w kolejnych połowach 
 
-Szarą przerywaną linią oznaczono połów rozpoczynający zmianę trendu długości złowionego śledzia 
+Szarą przerywaną linią oznaczono połów rozpoczynający zmianę trendu długości złowionego śledzia. 
 
 ```{r length_smooth}
 data_sample <- sample_n(data, 500)
@@ -263,6 +277,8 @@ q <- ggplot(data_sample, aes(fishing, length)) +
 ggplotly(q)
 ```
 
+Zmianą trendu długości śledzia poprzedza zmiana trendu dostępności Calanus helgolandicus gat. 1 i Widłonogów gat. 1
+
 ```{r food_smooth}
 food <- melt(data[, c(1, 3:8)], id.vars = c('fishing'),  variable.name = "plankton_type", value.name = "thickness")
 ggplot(food, aes(fishing, thickness, color=plankton_type)) +
@@ -271,6 +287,8 @@ ggplot(food, aes(fishing, thickness, color=plankton_type)) +
   ggtitle('Zmiana dostępności pokarmu') +
   theme_bw()
 ```
+
+Przed zmiana trendu długości śledzia widać duży spadek oscylacji północno atlantydzkiej. Dodatkowo po zmianie trendu zaobserwować można sukcesywny wzrost temperatury przy powierzchni wody.
 
 ```{r environment}
 environment <- data[, c('sst', 'sal', 'nao')]
@@ -284,6 +302,8 @@ ggplot(environment_melt, aes(fishing, normalized_value, color=environment_stat))
   ggtitle('Zmiana warunków środowiskowych') +
   theme_bw()
 ```
+
+Przed zmianą trendu rozmiaru śledzia widoczne są duże zmiany w eksploatacji i kondycji łowisk.
 
 ```{r exploitation}
 exploitation <- data[, c('fbar', 'recr', 'cumf', 'totaln')]
@@ -325,7 +345,7 @@ plot(varImp(model_lm))
 
 ``` {r xgbLinear}
 xgb_grid_1 = expand.grid(
-  nrounds=c(20,50,100), 
+  nrounds=c(20, 50, 100), 
   eta=0.3,
   alpha=c(1,0.7,0.3,0.1,0),
   lambda=c(1,0.7,0.3,0.1,0)
@@ -333,10 +353,12 @@ xgb_grid_1 = expand.grid(
 
 ctrl <- trainControl(
   method="cv",
-  number = 5)
+  number = 5,
+  allowParallel = TRUE)
 
 model_xgb <- train(length ~ ., data = X, trControl = ctrl, 
                    tuneGrid = xgb_grid_1, method = "xgbLinear", max_depth = 5)
+
 print(model_xgb)
 ```
 
@@ -350,4 +372,16 @@ Ocena wanożności atrybutów:
 
 ``` {r xgbLinear_importance}
 plot(varImp(model_xgb))
+```
+
+#### Porównanie modeli i wnioski końcowe
+
+Do porównania modeli użyto miary RMSE. Im mniejsza wartość tym lepszy regresor. W zestaieniu bezsprzecznie wygrywa model xgbLinear. Biorąc pod uwagę ten fakt oraz ocenę ważności atrybutów dla tego modelu można potwierdzić wczesniej zauważoną zależność. Zmiana temperatury przy powierzni ma znaczący i bezpośredni wpływ na zmianę wielkości śledzia w czasie. Natomiast zmiana dostępności pokarmu i ogólna liczba śledzi mogła być bezpośrednią przyczyną zmiany trendu rozmiaru śledzia.
+
+``` {r models_compare}
+models <- list(lm = model_lm, xgb = model_xgb)
+resampled <- resamples(models)
+
+summary(resampled)
+dotplot(resampled, metric = "RMSE")
 ```
