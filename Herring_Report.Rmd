@@ -1,9 +1,12 @@
 ---
 title: "Raport - analiza rozmarów śledzi"
 author: "Martin Berent"
-date: "`r format(Sys.time(), '%d %B, %Y')`"
+date: \`r format(Sys.Date(), "%d %B, %Y")`\
 output: 
   html_document:
+    toc: true
+    toc_depth: 4
+    theme: paper
     keep_md: true
 ---
 
@@ -16,40 +19,249 @@ library(knitr)
 library(dplyr)
 library(ggplot2)
 library(caret)
+library(pander)
+library(gridExtra)
+library(reshape2)
+library(plotly)
+library(imputeTS)
+library(corrplot)
+```
+
+```{r panderOptions, echo=FALSE}
+panderOptions('table.split.table', 180)
+panderOptions('table.style', 'rmarkdown')
+```
+
+```{r seed, echo=FALSE}
+set.seed(42)
 ```
 
 <br>
 
 ### Dane
-Atrybuty:
+#### Atrybuty:
 
-* **length:** długość złowionego śledzia [cm];
-* **cfin1:** dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 1];
-* **cfin2:** dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 2];
-* **chel1:** *dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 1];
-* **chel2:** dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 2];
-* **lcop1:** dostępność planktonu [zagęszczenie widłonogów gat. 1];
-* **lcop2:** dostępność planktonu [zagęszczenie widłonogów gat. 2];
-* **fbar:** natężenie połowów w regionie [ułamek pozostawionego narybku];
-* **recr:** roczny narybek [liczba śledzi];
-* **cumf:** łączne roczne natężenie połowów w regionie [ułamek pozostawionego narybku];
-* **totaln:** łączna liczba ryb złowionych w ramach połowu [liczba śledzi];
-* **sst:** temperatura przy powierzchni wody [°C];
-* **sal:** poziom zasolenia wody [Knudsen ppt];
-* **xmonth:** miesiąc połowu [numer miesiąca];
-* **nao:** oscylacja północnoatlantycka [mb].
+* **length:** długość złowionego śledzia [cm]
+* **cfin1:** dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 1]
+* **cfin2:** dostępność planktonu [zagęszczenie Calanus finmarchicus gat. 2]
+* **chel1:** *dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 1]
+* **chel2:** dostępność planktonu [zagęszczenie Calanus helgolandicus gat. 2]
+* **lcop1:** dostępność planktonu [zagęszczenie widłonogów gat. 1]
+* **lcop2:** dostępność planktonu [zagęszczenie widłonogów gat. 2]
+* **fbar:** natężenie połowów w regionie [ułamek pozostawionego narybku]
+* **recr:** roczny narybek [liczba śledzi]
+* **cumf:** łączne roczne natężenie połowów w regionie [ułamek pozostawionego narybku]
+* **totaln:** łączna liczba ryb złowionych w ramach połowu [liczba śledzi]
+* **sst:** temperatura przy powierzchni wody [°C]
+* **sal:** poziom zasolenia wody [Knudsen ppt]
+* **xmonth:** miesiąc połowu [numer miesiąca]
+* **nao:** oscylacja północnoatlantycka [mb]
 <br><br>
 
-```{r data_loading}
+#### Pierwszych pięć obserwacji:
+
+```{r data_loading, cache=TRUE}
 data <- read.csv("sledzie.csv", header = TRUE, sep = ",", na.strings = "?", nrows=52581)
-data <- data[-1]
-knitr::kable(head(data))
+data$xmonth <- factor(data$xmonth, sort(as.numeric(unique(data$xmonth))))
+data <- data %>% rename(fishing = X)
+pander(head(data))
 ```
 
 <br>
 
 ### Podstawowe statystyki
-
+#### Podsumowanie cech
 ```{r base_stats}
-knitr::kable(summary(data))
+sprintf("Liczba kolumn %d", ncol(data))
+sprintf("Liczba wierszy %d", nrow(data))
+sprintf("Liczba wierszy nie zawierających wartość pustą %d", nrow(na.omit(data)))
+pander(summary(data))
+```
+
+#### Rozkład wartości cech
+```{r values}
+ggplot(data, aes(length)) + geom_histogram(binwidth = 0.5) + 
+  theme_bw() + ggtitle('Długość złowionego śledzia')
+
+p_cfin1 <- ggplot(data, aes(cfin1)) + geom_histogram(bins = 40) + 
+  theme_bw() + ggtitle('Calanus finmarchicus gat. 1')
+p_cfin2 <- ggplot(data, aes(cfin2)) + geom_histogram(bins = 40) + 
+  theme_bw() + ggtitle('Calanus finmarchicus gat. 2')
+grid.arrange(p_cfin1, p_cfin2, nrow=1)
+
+p_chel1 <- ggplot(data, aes(chel1)) + geom_histogram(bins = 40) + 
+  theme_bw() + ggtitle('Calanus helgolandicus gat. 1')
+p_chel2 <- ggplot(data, aes(chel2)) + geom_histogram(bins = 40) + 
+  theme_bw() + ggtitle('Calanus helgolandicus gat. 2')
+grid.arrange(p_chel1, p_chel2, nrow=1)
+
+p_lcop1 <- ggplot(data, aes(lcop1)) + geom_histogram(bins = 40) + 
+  theme_bw() + ggtitle('Widłonogi gat. 1')
+p_lcop2 <- ggplot(data, aes(lcop2)) + geom_histogram(bins = 40) + 
+  theme_bw()+ ggtitle('Widłonogi gat. 2')
+grid.arrange(p_lcop1, p_lcop2, nrow=1)
+
+p_fbar <- ggplot(data, aes(fbar)) + geom_histogram(binwidth = 0.05) + 
+  theme_bw() + ggtitle('Natężenie połowów w regionie')
+p_cumf <- ggplot(data, aes(cumf)) + geom_histogram(binwidth = 0.02) + 
+  theme_bw() + ggtitle('Roczne natężenie połowów\nw regionie')
+p_recr <- ggplot(data, aes(recr)) + geom_histogram() + 
+  theme_bw() + ggtitle('Roczny narybek')
+p_totaln <- ggplot(data, aes(totaln)) + geom_histogram(binwidth = 50000) + 
+  theme_bw() + ggtitle('Liczba złowionych ryb')
+grid.arrange(p_fbar, p_cumf, p_recr, p_totaln, nrow=2)
+
+p_sst <- ggplot(data, aes(sst)) + geom_histogram() + 
+  theme_bw() + ggtitle('Temp. przy powierzchni wody')
+p_sal <- ggplot(data, aes(sal)) + geom_histogram() + 
+  theme_bw() + ggtitle('Poziom zasolenia wody')
+grid.arrange(p_sst, p_sal, nrow=1)
+
+p_xmonth <- ggplot(data, aes(xmonth)) + geom_bar(stat = 'count') + 
+  theme_bw() + ggtitle('Miesiąc połowu')
+p_nao <- ggplot(data, aes(nao)) + geom_histogram(binwidth = 0.3) + 
+  theme_bw() + ggtitle('Oscylacja północnoatlantycka')
+grid.arrange(p_xmonth, p_nao, nrow=1)
+```
+
+### Wartości odstające
+
+Na podstawie wykresów obrazujących rozkład wartości można wnioskować że dla atrybutów *cfin1* oraz *lcop1* występują wartości odstające.
+
+```{r cfin1_outliers}
+pander(data %>% filter(cfin1 > 10 | lcop1 > 90))
+```
+
+Powyższe obserwacje zostaną usunięte ze zbioru danych. Poniżej rozkład wartości bez wartości odstających.
+
+```{r cfin1_outliers_remove}
+data <- data %>% filter(cfin1 <= 10 | is.na(cfin1)) %>% filter(lcop1 <= 90 | is.na(lcop1))
+
+p_cfin1 <- ggplot(data, aes(cfin1)) + geom_histogram(bins = 40) + 
+  theme_bw() + ggtitle('Calanus finmarchicus gat. 1')
+p_lcop1 <- ggplot(data, aes(lcop1)) + geom_histogram(bins = 40) + 
+  theme_bw() + ggtitle('Widłonogi gat. 1')
+
+grid.arrange(p_cfin1, p_lcop1, nrow=1)
+```
+
+### Wartości puste
+
+Kolumny zawierające wartości puste
+
+```{r}
+colnames(data)[apply(is.na(data), 2, any)]
+```
+
+#### cfin1
+
+```{r}
+statsNA(data$cfin1, bins = 10)
+```
+
+#### cfin2
+
+```{r}
+statsNA(data$cfin2, bins = 10)
+```
+
+#### chel1
+
+```{r}
+statsNA(data$chel1, bins = 10)
+```
+
+#### chel2
+
+```{r}
+statsNA(data$chel2, bins = 10)
+```
+
+#### lcop1
+
+```{r}
+statsNA(data$lcop1, bins = 10)
+```
+
+#### lcop2
+
+```{r}
+statsNA(data$lcop2, bins = 10)
+```
+
+#### sst
+
+```{r}
+statsNA(data$sst, bins = 10)
+```
+
+#### Wypełniane 
+
+Dla wszystkich powyższych atrubutów wartości puste stanowią mniej niż 5% obserwacji. Ich rokład jest równomierny i ma charakter losowy. Sekwencje dwóch lub trzech wartości pustych są rzadkie. W związku z tym wartości puste będą imputowane z użyciem filtru Kalmana.   
+
+```{r na_kalman}
+data$cfin1 <- na.kalman(data$cfin1)
+data$cfin2 <- na.kalman(data$cfin2)
+data$chel1 <- na.kalman(data$chel1)
+data$chel2 <- na.kalman(data$chel2)
+data$lcop1 <- na.kalman(data$lcop1)
+data$lcop2 <- na.kalman(data$lcop2)
+data$sst <- na.kalman(data$sst)
+```
+
+### Korelacja
+
+Do przygotowania wykresu nie użyto kolumny identyfikującej połów oraz kolumny określającej miesiąc połowu.
+
+```{r}
+M<-cor(data[, -c(1,15)])
+corrplot(M, method="circle")
+```
+
+```{r nao_lcop1}
+data_sample <- data
+ggplot(data_sample, aes(nao, lcop1)) + 
+  geom_point() + 
+  geom_smooth(color="green", method="lm") + 
+  theme_bw()
+```
+
+```{r nao_chel1}
+data_sample <- data
+ggplot(data_sample, aes(nao, chel1)) + 
+  geom_point() + 
+  geom_smooth(color="green", method="lm") + 
+  theme_bw()
+```
+
+```{r sst_length}
+data_sample <- data
+ggplot(data_sample, aes(sst, length)) + 
+  geom_point() + 
+  geom_smooth(color="green", method="lm") + 
+  theme_bw()
+```
+
+### Zmienność cech w kolejnych połowach 
+
+Szarą przerywaną linią oznaczono połów rozpoczynający zmianę trendu długości złowionego śledzia 
+
+```{r length_smooth}
+data_sample <- sample_n(data, 500)
+q <- ggplot(data_sample, aes(fishing, length)) + 
+  geom_jitter() + 
+  geom_smooth(se = FALSE, color="green") + 
+  geom_vline(xintercept = 17000, colour="darkgray", linetype = "longdash", size=1) + 
+  ggtitle('Zmiana długości złowionego śledzia') +
+  theme_bw()
+ggplotly(q)
+```
+
+```{r food_smooth}
+food <- melt(data[, c(1, 3:8)], id.vars = c('fishing'),  variable.name = "plankton_type", value.name = "thickness")
+ggplot(food, aes(fishing, thickness, color=plankton_type)) +
+  geom_smooth(se = FALSE) + 
+  geom_vline(xintercept = 16800, colour="darkgray", linetype = "longdash", size=1) + 
+  ggtitle('Zmiana dostępności pokarmu') +
+  theme_bw()
 ```
