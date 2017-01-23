@@ -36,6 +36,12 @@ panderOptions('table.style', 'rmarkdown')
 set.seed(42)
 ```
 
+```{r custom_finctions, echo=FALSE}
+minMaxNormalization <- function(x) {
+  (x - min(x, na.rm=TRUE))/(max(x,na.rm=TRUE) - min(x, na.rm=TRUE))
+}
+```
+
 <br>
 
 ### Dane
@@ -213,7 +219,7 @@ data$sst <- na.kalman(data$sst)
 
 Do przygotowania wykresu nie użyto kolumny identyfikującej połów oraz kolumny określającej miesiąc połowu.
 
-```{r}
+```{r corrplot}
 M<-cor(data[, -c(1,15)])
 corrplot(M, method="circle")
 ```
@@ -264,4 +270,74 @@ ggplot(food, aes(fishing, thickness, color=plankton_type)) +
   geom_vline(xintercept = 16800, colour="darkgray", linetype = "longdash", size=1) + 
   ggtitle('Zmiana dostępności pokarmu') +
   theme_bw()
+```
+
+```{r environment}
+environment <- data[, c('sst', 'sal', 'nao')]
+normed <- as.data.frame(lapply(environment, minMaxNormalization))
+normed["fishing"] <- data$fishing
+environment_melt <- melt(normed, id.vars = c('fishing'),  variable.name = "environment_stat", value.name = "normalized_value")
+
+ggplot(environment_melt, aes(fishing, normalized_value, color=environment_stat)) +
+  geom_smooth(se = FALSE) + 
+  geom_vline(xintercept = 16800, colour="darkgray", linetype = "longdash", size=1) + 
+  ggtitle('Zmiana warunków środowiskowych') +
+  theme_bw()
+```
+
+### Regresja
+
+```{r data_splitting}
+inTrain <- createDataPartition(y=data$fishing, p=0.7, list=FALSE)
+training <- data[inTrain, -c(1)]
+testing <- data[-inTrain, -c(1)]
+
+
+xgb_grid_1 = expand.grid(
+  nrounds = 2, 
+  max_depth = c(5, 10, 15), 
+  eta = c(0.01, 0.001, 0.0001), 
+  gamma = c(1, 2, 3), 
+  colsample_bytree = c(0.4, 0.7, 1.0), 
+  min_child_weight = c(0.5, 1, 1.5)
+)
+```
+
+``` {r linear_regression}
+ctrl <- trainControl(
+  method="cv",
+  number = 5)
+
+model_lm <- train(length ~ ., data = training, method = "lm", trControl = ctrl)
+
+print(model_lm)
+
+predictions_lm <- predict(model_lm, testing)
+
+postResample(pred = predictions_lm, obs = testing$length)
+
+plot(varImp(model_lm))
+```
+
+``` {r xgbLinear}
+xgb_grid_1 = expand.grid(
+  nrounds = 100, 
+  eta=c(0.1,0.01,0.001,0.0001),
+  alpha = 0,
+  lambda = 1
+)
+
+ctrl <- trainControl(
+  method="cv",
+  number = 5)
+
+model_xgb <- train(length ~ ., data = training, trControl = ctrl, tuneGrid = xgb_grid_1, 
+                   method = "xgbLinear", max_depth = 8)
+print(model_xgb)
+
+predictions_xgb <- predict(model_xgb, testing)
+
+postResample(pred = predictions_xgb, obs = testing$length)
+
+plot(varImp(model_xgb))
 ```
